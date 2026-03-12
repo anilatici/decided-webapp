@@ -14,9 +14,11 @@ import type { Decision, UserProfile } from '@/types';
 export function ProfileClient({
   profile,
   decisions,
+  storageError,
 }: {
   profile: UserProfile;
   decisions: Decision[];
+  storageError?: string | null;
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -76,6 +78,12 @@ export function ProfileClient({
           <div className="font-mono text-xs uppercase tracking-[0.24em] text-text-secondary">Plan</div>
         </Card>
       </div>
+
+      {storageError ? (
+        <Card className="border-danger/30 bg-danger/10">
+          <p className="text-sm text-text-primary">{storageError}</p>
+        </Card>
+      ) : null}
 
       <section className="space-y-4">
         <div className="font-mono text-xs uppercase tracking-[0.24em] text-text-secondary">Learned About You</div>

@@ -65,3 +65,48 @@ export const BLOCKED_MESSAGE =
 
 export const SELF_HARM_MESSAGE =
   "I'm not able to help with that, but please know support is available. If you're in crisis, contact your local emergency services or a crisis helpline. You don't have to face this alone.";
+
+const MODEL_BLOCKED_HINTS = [
+  "that's outside what i can help with",
+  'decided is built for everyday decisions',
+  'decided is for everyday decisions',
+  "i'm not able to help with that",
+  "i am not able to help with that",
+  'contact your local emergency services',
+  'crisis line',
+  'crisis helpline',
+];
+
+export function getSafetyMessage(input: string): string | null {
+  if (isSelfHarmRelated(input)) {
+    return SELF_HARM_MESSAGE;
+  }
+
+  if (!isSafe(input)) {
+    return BLOCKED_MESSAGE;
+  }
+
+  return null;
+}
+
+export function getBlockedMessageFromModelOutput(output: string): string | null {
+  const normalized = output.toLowerCase().trim();
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (MODEL_BLOCKED_HINTS.some((hint) => normalized.includes(hint))) {
+    if (
+      normalized.includes('emergency services') ||
+      normalized.includes('crisis line') ||
+      normalized.includes('crisis helpline')
+    ) {
+      return SELF_HARM_MESSAGE;
+    }
+
+    return BLOCKED_MESSAGE;
+  }
+
+  return null;
+}

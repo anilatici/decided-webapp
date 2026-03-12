@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useAppNavigation } from '@/components/layout/AppNavigationContext';
 import { cn } from '@/lib/utils/cn';
-import { StreakBadge } from '@/components/shared/StreakBadge';
 
 const items = [
   { href: '/decide', label: 'Decide', icon: '⚡' },
@@ -12,7 +11,7 @@ const items = [
   { href: '/profile', label: 'Profile', icon: '👤' },
 ];
 
-export function Sidebar({ email, streak }: { email: string; streak: number }) {
+export function Sidebar({ email }: { email: string }) {
   const { pathname, pendingHref, setPendingHref } = useAppNavigation();
   const selectedHref = pendingHref ?? pathname;
 
@@ -46,7 +45,6 @@ export function Sidebar({ email, streak }: { email: string; streak: number }) {
         })}
       </nav>
       <div className="mt-auto space-y-4">
-        <StreakBadge streak={streak} />
         <div className="text-sm text-text-secondary">{email}</div>
       </div>
     </aside>

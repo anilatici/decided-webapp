@@ -1,6 +1,7 @@
 import { subDays } from 'date-fns';
 import { HistoryCard } from '@/components/history/HistoryCard';
 import { Card } from '@/components/ui/Card';
+import { getDecisionStorageErrorMessage } from '@/lib/supabase/errors';
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentProfile } from '@/lib/utils/session';
 import type { Decision } from '@/types';
@@ -10,7 +11,7 @@ export default async function HistoryPage() {
   if (!profile) return null;
 
   const supabase = createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('decisions')
     .select('*')
     .eq('user_id', profile.id)
@@ -39,6 +40,11 @@ export default async function HistoryPage() {
           <div className="font-mono text-xs uppercase tracking-[0.24em] text-text-secondary">This Week</div>
         </Card>
       </div>
+      {error ? (
+        <Card className="border-danger/30 bg-danger/10">
+          <p className="text-sm text-text-primary">{getDecisionStorageErrorMessage(error)}</p>
+        </Card>
+      ) : null}
       <div className="space-y-4">
         {decisions.map((decision) => (
           <HistoryCard

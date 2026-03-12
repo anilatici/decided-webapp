@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getDecisionStorageErrorMessage, isMissingDecisionsTableError } from '@/lib/supabase/errors';
 import { createClient } from '@/lib/supabase/server';
 
 export async function POST(request: NextRequest) {
@@ -20,7 +21,13 @@ export async function POST(request: NextRequest) {
   });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    return NextResponse.json(
+      {
+        code: isMissingDecisionsTableError(error) ? 'DECISIONS_TABLE_MISSING' : 'SAVE_DECISION_FAILED',
+        error: getDecisionStorageErrorMessage(error),
+      },
+      { status: 400 },
+    );
   }
 
   return NextResponse.json({ ok: true });

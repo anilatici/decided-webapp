@@ -7,7 +7,8 @@ import { ClarifyingStep } from '@/components/decide/ClarifyingStep';
 import { LoadingStep } from '@/components/decide/LoadingStep';
 import { ResultCard } from '@/components/decide/ResultCard';
 import { PaywallModal } from '@/components/paywall/PaywallModal';
-import { BLOCKED_MESSAGE, isSafe, isSelfHarmRelated, SELF_HARM_MESSAGE } from '@/lib/safety/filter';
+import { Button } from '@/components/ui/Button';
+import { getSafetyMessage } from '@/lib/safety/filter';
 import { useDecisionStore } from '@/lib/store/decisionStore';
 import { useSubscriptionStore } from '@/lib/store/subscriptionStore';
 import type { ClarifyingQuestion, Recommendation, UserProfile } from '@/types';
@@ -45,13 +46,9 @@ export function DecideClient({
       return;
     }
 
-    if (isSelfHarmRelated(store.inputText)) {
-      store.setBlockedMessage(SELF_HARM_MESSAGE);
-      return;
-    }
-
-    if (!isSafe(store.inputText)) {
-      store.setBlockedMessage(BLOCKED_MESSAGE);
+    const safetyMessage = getSafetyMessage(store.inputText);
+    if (safetyMessage) {
+      store.setBlockedMessage(safetyMessage);
       return;
     }
 
@@ -66,7 +63,14 @@ export function DecideClient({
       });
       const data = await response.json();
 
-      if (!response.ok) throw new Error(data.error ?? 'Question generation failed');
+      if (!response.ok) {
+        if (data.code === 'SENSITIVE_REQUEST') {
+          store.setBlockedMessage(data.error ?? 'That request is outside what Decided can help with.');
+          return;
+        }
+
+        throw new Error(data.error ?? 'Question generation failed');
+      }
 
       const questions = (data.questions ?? []) as ClarifyingQuestion[];
       if (questions.length === 0) {
@@ -97,7 +101,14 @@ export function DecideClient({
         }),
       });
       const data = (await response.json()) as Recommendation & { error?: string };
-      if (!response.ok) throw new Error(data.error ?? 'Recommendation generation failed');
+      if (!response.ok) {
+        if ((data as { code?: string }).code === 'SENSITIVE_REQUEST') {
+          store.setBlockedMessage(data.error ?? 'That request is outside what Decided can help with.');
+          return;
+        }
+
+        throw new Error(data.error ?? 'Recommendation generation failed');
+      }
 
       store.setRecommendation(data);
       if (!isPro) {
@@ -155,6 +166,16 @@ export function DecideClient({
       <div className="mx-auto max-w-xl space-y-4 rounded-card border border-danger/30 bg-danger/10 p-6">
         <div className="font-mono text-xs uppercase tracking-[0.28em] text-danger">Blocked</div>
         <p className="text-sm text-text-primary">{store.blockedMessage}</p>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => {
+            store.setBlockedMessage(null);
+            store.setStep('input');
+          }}
+        >
+          Return Back To Decision
+        </Button>
       </div>
     );
   }

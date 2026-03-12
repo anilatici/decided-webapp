@@ -18,9 +18,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <AppNavigationProvider>
       <div className="min-h-screen lg:flex">
         <AppRoutePrefetch />
-        <Sidebar email={user.email ?? ''} streak={4} />
+        <Sidebar email={user.email ?? ''} />
         <div className="min-w-0 flex-1 pb-24 lg:pb-0">
-          <TopBar streak={4} />
+          <TopBar />
           <main className="mx-auto w-full max-w-6xl px-4 py-6 md:px-6 lg:px-10 lg:py-10">
             <AppContentTransition>{children}</AppContentTransition>
           </main>

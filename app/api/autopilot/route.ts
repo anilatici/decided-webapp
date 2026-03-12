@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOpenAIClient } from '@/lib/openai/client';
 import { generateAutopilotSystem, SAFETY_BLOCK } from '@/lib/prompts';
+import { getBlockedMessageFromModelOutput } from '@/lib/safety/filter';
 import { parseJsonContent } from '@/lib/utils/json';
 
 export async function POST(request: NextRequest) {
@@ -22,10 +23,22 @@ export async function POST(request: NextRequest) {
   try {
     return NextResponse.json(parseJsonContent(raw));
   } catch (error) {
+    const blockedMessage = getBlockedMessageFromModelOutput(raw);
+
+    if (blockedMessage) {
+      return NextResponse.json(
+        {
+          code: 'SENSITIVE_REQUEST',
+          error: blockedMessage,
+        },
+        { status: 422 },
+      );
+    }
+
     return NextResponse.json(
       {
-        error: 'Failed to parse autopilot plan',
-        details: error instanceof Error ? error.message : 'Unknown parse error',
+        code: 'AUTOPILOT_PARSE_FAILED',
+        error: 'I could not build a plan from that. Try shortening it and focus on normal day-planning details.',
       },
       { status: 500 },
     );
