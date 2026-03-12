@@ -10,6 +10,10 @@ import { Input } from '@/components/ui/Input';
 
 type Mode = 'login' | 'register' | 'forgot-password';
 
+function getAuthCallbackUrl(pathname: string) {
+  return `${window.location.origin}/auth/callback?next=${encodeURIComponent(pathname)}`;
+}
+
 export function AuthForm({ mode }: { mode: Mode }) {
   const router = useRouter();
   const supabase = createClient();
@@ -43,7 +47,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/verify`,
+            emailRedirectTo: getAuthCallbackUrl('/decide'),
           },
         });
         if (error) throw error;
@@ -52,7 +56,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
       }
 
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/login`,
+        redirectTo: getAuthCallbackUrl('/reset-password'),
       });
       if (error) throw error;
       toast.success('Reset email sent');

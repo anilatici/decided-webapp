@@ -1,7 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { createClient } from '@supabase/supabase-js';
 import { getStripeClient } from '@/lib/stripe/client';
+import { createAdminClient } from '@/lib/supabase/admin';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+type ProfileUpdate = {
+  is_premium?: boolean;
+  stripe_customer_id?: string | null;
+  premium_expires_at?: string;
+};
+
+function getRequiredEnv(name: string) {
+  const value = process.env[name];
+
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+
+  return value;
+}
 
 function getSubscriptionCustomerId(subscription: Stripe.Subscription) {
   return typeof subscription.customer === 'string' ? subscription.customer : subscription.customer?.id ?? null;
@@ -26,7 +45,7 @@ async function syncPremiumStatusForSubscription({
   fallbackUserId,
 }: {
   stripe: Stripe;
-  supabase: any;
+  supabase: ReturnType<typeof createAdminClient>;
   subscriptionId: string;
   fallbackUserId?: string | null;
 }) {
@@ -40,7 +59,7 @@ async function syncPremiumStatusForSubscription({
     return;
   }
 
-  const update = {
+  const update: ProfileUpdate = {
     is_premium: isActive,
     stripe_customer_id: stripeCustomerId,
     premium_expires_at:
@@ -64,10 +83,7 @@ async function syncPremiumStatusForSubscription({
 
 export async function POST(request: NextRequest) {
   const stripe = getStripeClient();
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  );
+  const supabase = createAdminClient();
   const body = await request.text();
   const signature = request.headers.get('stripe-signature');
 
@@ -77,101 +93,112 @@ export async function POST(request: NextRequest) {
 
   let event: Stripe.Event;
   try {
-    event = stripe.webhooks.constructEvent(body, signature, process.env.STRIPE_WEBHOOK_SECRET!);
-  } catch {
+    event = stripe.webhooks.constructEvent(body, signature, getRequiredEnv('STRIPE_WEBHOOK_SECRET'));
+  } catch (error) {
+    console.error('Stripe webhook signature verification failed', error);
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
   }
 
-  switch (event.type) {
-    case 'checkout.session.completed': {
-      const session = event.data.object as Stripe.Checkout.Session;
-      const userId =
-        session.metadata?.supabase_user_id ??
-        (typeof session.client_reference_id === 'string' ? session.client_reference_id : null);
+  try {
+    switch (event.type) {
+      case 'checkout.session.completed': {
+        const session = event.data.object as Stripe.Checkout.Session;
+        const userId =
+          session.metadata?.supabase_user_id ??
+          (typeof session.client_reference_id === 'string' ? session.client_reference_id : null);
 
-      if (userId && typeof session.customer === 'string') {
-        const { error } = await supabase
-          .from('profiles')
-          .update({
-            stripe_customer_id: session.customer,
-          })
-          .eq('id', userId);
+        if (userId && typeof session.customer === 'string') {
+          const { error } = await supabase
+            .from('profiles')
+            .update({
+              stripe_customer_id: session.customer,
+            })
+            .eq('id', userId);
 
-        if (error) {
-          console.error('Failed to persist Stripe customer from checkout session', {
-            userId,
-            customer: session.customer,
-            error,
+          if (error) {
+            console.error('Failed to persist Stripe customer from checkout session', {
+              userId,
+              customer: session.customer,
+              error,
+            });
+          }
+        }
+
+        if (typeof session.subscription === 'string') {
+          await syncPremiumStatusForSubscription({
+            stripe,
+            supabase,
+            subscriptionId: session.subscription,
+            fallbackUserId: userId,
           });
         }
-      }
 
-      if (typeof session.subscription === 'string') {
+        console.log('Processed checkout.session.completed', {
+          userId,
+          customer: session.customer,
+          subscription: session.subscription,
+        });
+
+        break;
+      }
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted': {
+        const subscription = event.data.object as Stripe.Subscription;
+        const userId = subscription.metadata.supabase_user_id || null;
+
         await syncPremiumStatusForSubscription({
           stripe,
           supabase,
-          subscriptionId: session.subscription,
+          subscriptionId: subscription.id,
           fallbackUserId: userId,
         });
-      }
 
-      console.log('Processed checkout.session.completed', {
-        userId,
-        customer: session.customer,
-        subscription: session.subscription,
-      });
-
-      break;
-    }
-    case 'customer.subscription.created':
-    case 'customer.subscription.updated':
-    case 'customer.subscription.deleted': {
-      const subscription = event.data.object as Stripe.Subscription;
-      const userId = subscription.metadata.supabase_user_id || null;
-
-      await syncPremiumStatusForSubscription({
-        stripe,
-        supabase,
-        subscriptionId: subscription.id,
-        fallbackUserId: userId,
-      });
-
-      console.log(`Processed ${event.type}`, {
-        userId,
-        customer: getSubscriptionCustomerId(subscription),
-        subscriptionId: subscription.id,
-      });
-
-      break;
-    }
-    case 'invoice.paid': {
-      const invoice = event.data.object as Stripe.Invoice;
-
-      if (typeof invoice.subscription === 'string') {
-        await syncPremiumStatusForSubscription({
-          stripe,
-          supabase,
-          subscriptionId: invoice.subscription,
+        console.log(`Processed ${event.type}`, {
+          userId,
+          customer: getSubscriptionCustomerId(subscription),
+          subscriptionId: subscription.id,
         });
+
+        break;
       }
+      case 'invoice.paid': {
+        const invoice = event.data.object as Stripe.Invoice;
 
-      console.log('Processed invoice.paid', {
-        customer: invoice.customer,
-        subscription: invoice.subscription,
-      });
+        if (typeof invoice.subscription === 'string') {
+          await syncPremiumStatusForSubscription({
+            stripe,
+            supabase,
+            subscriptionId: invoice.subscription,
+          });
+        }
 
-      break;
+        console.log('Processed invoice.paid', {
+          customer: invoice.customer,
+          subscription: invoice.subscription,
+        });
+
+        break;
+      }
+      case 'invoice.payment_failed': {
+        const invoice = event.data.object as Stripe.Invoice;
+        console.warn('Stripe invoice payment failed', {
+          customer: invoice.customer,
+          subscription: invoice.subscription,
+        });
+        break;
+      }
+      default:
+        console.log(`Unhandled Stripe event type: ${event.type}`);
+        break;
     }
-    case 'invoice.payment_failed': {
-      const invoice = event.data.object as Stripe.Invoice;
-      console.warn('Stripe invoice payment failed', {
-        customer: invoice.customer,
-        subscription: invoice.subscription,
-      });
-      break;
-    }
-    default:
-      break;
+  } catch (error) {
+    console.error('Stripe webhook processing failed', {
+      eventType: event.type,
+      eventId: event.id,
+      error,
+    });
+    return NextResponse.json({ error: 'Webhook handler failed' }, { status: 500 });
   }
 
   return NextResponse.json({ received: true });
